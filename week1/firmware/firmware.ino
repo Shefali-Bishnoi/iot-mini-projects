@@ -10,10 +10,15 @@ static OledDisplay oledDisplay;
 static RadioEvents_t radioEvents;
 static SensorInterface sensorInterface;
 
+static int16_t lastRssi = 0;
+static int8_t lastSNR = 0;
+
 static void on_tx_done() { Radio.Rx(0); }
 static void on_tx_timeout() { Radio.Rx(0); }
 static void on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi,
                        int8_t snr) {
+  lastRssi = rssi;
+  lastSNR = snr;
   Serial.printf("A frame sized %d was received.\n", size);
 }
 
@@ -72,23 +77,44 @@ static void showTime() {
   uint32_t seconds = uptime % 60;
 
   sprintf(buffer, "U: %02d:%02d:%02d", hours, minutes, seconds);
-  oledDisplay.write(2, 0, buffer);
+  oledDisplay.write(5, 3, buffer);
+}
+
+/* Dashboard Network element */
+static void drawBanner() { oledDisplay.write(0, 0, " ENV MONITOR "); }
+
+static void drawNetwork() {
+  sprintf(buffer, "RSSI:%d | SNR: %d", lastRssi, lastSNR);
+  oledDisplay.write(0, 4, buffer);
+}
+
+static void drawSensors(int32_t t, int32_t h, int32_t p, int32_t g) {
+  sprintf(buffer, "T:%d.%02dC | H:%d.%03d%%", t / 100, abs(t % 100), h / 1000,
+          abs(h % 1000));
+  oledDisplay.write(0, 1, buffer);
+
+  sprintf(buffer, "P:%d.%03dkPa", p / 1000, abs(p % 1000));
+  oledDisplay.write(0, 2, buffer);
+
+  sprintf(buffer, "G:%d.%02d", g / 100, abs(g % 100));
+  oledDisplay.write(0, 3, buffer);
+}
+
+static void renderDashboard(int32_t t, int32_t h, int32_t p, int32_t g) {
+  oledDisplay.clear();
+  drawBanner();
+  drawSensors(t, h, p, g);
+  drawNetwork();
+  showTime();
+  oledDisplay.commit();
 }
 
 void loop() {
   static int32_t temp, humidity, pressure, gas;
+
   sensorInterface.getSensorData(temp, humidity, pressure, gas);
-  oledDisplay.clear();
-  showTime(); // show the uptime on the display
-  sprintf(buffer, "T: %d.%d", temp / 100, temp % 100);
-  oledDisplay.write(0, 1, buffer);
-  sprintf(buffer, "H: %d.%d", humidity / 1000, humidity % 1000);
-  oledDisplay.write(0, 2, buffer);
-  sprintf(buffer, "P: %d.%d", pressure / 1000, pressure % 1000);
-  oledDisplay.write(0, 3, buffer);
-  sprintf(buffer, "G: %d.%d", gas / 100, gas % 100);
-  oledDisplay.write(0, 4, buffer);
-  oledDisplay.commit();
+  renderDashboard(temp, humidity, pressure, gas);
+
   Radio.IrqProcess();
   delay(1000);
 }
